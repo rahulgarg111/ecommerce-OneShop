@@ -29,7 +29,7 @@ const CheckoutPage = () => {
 
   const checkoutMutation = useMutation({
     mutationFn: ordersApi.checkout,
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast.success('Order created! Redirecting to payment...');
       // In a real app, redirect to Stripe Checkout or use Stripe Elements
       // For now, just navigate to orders

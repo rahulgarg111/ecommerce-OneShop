@@ -29,7 +29,7 @@ const ProductsPage = () => {
 
     // Filter by category
     if (selectedCategory) {
-      filtered = filtered.filter(p => p.category.slug === selectedCategory);
+      filtered = filtered.filter(p => p.category?.slug === selectedCategory);
     }
 
     // Filter by search query
