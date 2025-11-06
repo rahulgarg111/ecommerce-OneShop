@@ -1,0 +1,3 @@
+# Redirects for React Router SPA
+# This ensures all routes are handled by the client-side router
+/* /index.html 200
