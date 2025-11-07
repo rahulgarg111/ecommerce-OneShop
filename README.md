@@ -2,11 +2,7 @@
 
 A full-stack e-commerce application built with the MERN stack (MongoDB, Express, React, Node.js) featuring product catalog, shopping cart, Stripe payments, order management, and admin dashboard.
 
-## 🚀 Quick Links
-
-- **[Quick Start Guide](QUICK_START.md)** - Get running in 10 minutes!
-- **[Environment Setup Guide](ENV_SETUP_GUIDE.md)** - Detailed guide to get all API keys and credentials
-- **[API Documentation](#api-documentation)** - Complete API reference below
+- ** 🚀 [Quick Start Guide](QUICK_START.md)** - Get running in 10 minutes!
 
 ## Features
 
