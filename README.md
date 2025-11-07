@@ -2,6 +2,8 @@
 
 A full-stack e-commerce application built with the MERN stack (MongoDB, Express, React, Node.js) featuring product catalog, shopping cart, Stripe payments, order management, and admin dashboard.
 
+LIVE - https://vocal-sprinkles-a1fdcb.netlify.app/
+
 ## Features
 
 ### Core Functionality
