@@ -25,7 +25,10 @@ export interface Product {
   name: string;
   slug: string;
   description: string;
+  brand?: string;
+  highlights?: string[];
   price: number;
+  compareAtPrice?: number;
   currency: string;
   images: ProductImage[];
   category?: Category;

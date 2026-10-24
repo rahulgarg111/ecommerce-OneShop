@@ -21,7 +21,10 @@ export interface IProduct extends Document {
   name: string;
   slug: string;
   description: string;
+  brand?: string;
+  highlights: string[];
   price: number;
+  compareAtPrice?: number;
   currency: string;
   images: IProductImage[];
   category?: mongoose.Types.ObjectId;
@@ -46,7 +49,6 @@ const ProductVariantSchema = new Schema<IProductVariant>({
   sku: {
     type: String,
     required: true,
-    unique: true,
   },
   attributes: {
     type: Schema.Types.Mixed,
@@ -82,9 +84,20 @@ const ProductSchema = new Schema<IProduct>(
       type: String,
       required: [true, 'Product description is required'],
     },
+    brand: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    highlights: [{ type: String, trim: true }],
     price: {
       type: Number,
       required: [true, 'Product price is required'],
+      min: 0,
+    },
+    // Original price (MRP) for showing a discount; omit when not on sale
+    compareAtPrice: {
+      type: Number,
       min: 0,
     },
     currency: {
@@ -139,6 +152,9 @@ const ProductSchema = new Schema<IProduct>(
 );
 
 // Text index for search
-ProductSchema.index({ name: 'text', description: 'text', tags: 'text' });
+ProductSchema.index(
+  { name: 'text', description: 'text', tags: 'text', brand: 'text' },
+  { weights: { name: 10, tags: 6, brand: 4, description: 1 }, name: 'product_text_search' }
+);
 
 export const Product = mongoose.model<IProduct>('Product', ProductSchema);

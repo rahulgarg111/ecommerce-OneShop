@@ -61,4 +61,33 @@ apiClient.interceptors.response.use(
   }
 );
 
+/** Seconds until the stored access token expires (negative if expired, null if none/unreadable). */
+const tokenSecondsLeft = (token: string): number | null => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp - Date.now() / 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Access token for requests made outside axios (e.g. streaming fetch), refreshed first if it is
+ * about to expire. Returns null for guests or when the session can't be refreshed.
+ */
+export const getFreshAccessToken = async (): Promise<string | null> => {
+  const token = localStorage.getItem('accessToken');
+  if (!token) return null;
+  const left = tokenSecondsLeft(token);
+  if (left === null || left > 30) return token;
+  try {
+    const response = await axios.post(`${API_URL}/auth/refresh-token`, {}, { withCredentials: true });
+    const { accessToken } = response.data.data;
+    localStorage.setItem('accessToken', accessToken);
+    return accessToken;
+  } catch {
+    return null;
+  }
+};
+
 export default apiClient;

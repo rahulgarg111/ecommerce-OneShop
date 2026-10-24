@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
+import { body, param } from 'express-validator';
 import {
   checkout,
+  confirmPayment,
   getOrders,
   getOrderById,
   cancelOrder,
@@ -23,10 +24,15 @@ const checkoutValidation = [
   body('shippingAddress.phone').notEmpty().withMessage('Phone is required'),
 ];
 
+const orderIdValidation = [
+  param('id').isMongoId().withMessage('Invalid order ID'),
+];
+
 // All routes require authentication
 router.use(authenticate);
 
 router.post('/checkout', validate(checkoutValidation), checkout);
+router.post('/:id/confirm-payment', validate(orderIdValidation), confirmPayment);
 router.get('/', getOrders);
 router.get('/:id', getOrderById);
 router.post('/:id/cancel', cancelOrder);

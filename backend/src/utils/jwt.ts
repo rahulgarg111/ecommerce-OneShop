@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { type SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
 import { config } from '../config/env';
 import { RefreshToken } from '../models/RefreshToken.model';
@@ -12,7 +12,7 @@ export interface TokenPayload {
 
 export const generateAccessToken = (payload: TokenPayload): string => {
   return jwt.sign(payload, config.jwt.accessSecret, {
-    expiresIn: config.jwt.accessExpiry,
+    expiresIn: config.jwt.accessExpiry as SignOptions['expiresIn'],
   });
 };
 

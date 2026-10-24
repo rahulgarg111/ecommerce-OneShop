@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import AuthLayout from './AuthLayout';
 
 const RegisterPage = () => {
   const [name, setName] = useState('');
@@ -10,119 +13,86 @@ const RegisterPage = () => {
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = (location.state as { from?: { pathname: string } } | null)?.from?.pathname || '/';
+
+  const strength = [password.length >= 8, /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (password !== confirmPassword) {
-      alert('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 8) {
-      alert('Password must be at least 8 characters');
-      return;
-    }
+    if (password.length < 8) return void toast.error('Password must be at least 8 characters');
+    if (password !== confirmPassword) return void toast.error('Passwords do not match');
 
     setLoading(true);
-
     try {
       await register(name, email, password);
-      navigate('/');
-    } catch (error) {
-      // Error already handled in AuthContext
+      navigate(redirectTo, { replace: true });
+    } catch {
+      // Error toast is shown by AuthContext
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container-custom py-12">
-      <div className="max-w-md mx-auto">
-        <div className="card">
-          <h1 className="text-3xl font-bold mb-6 text-center">Sign Up</h1>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium mb-2">
-                Full Name
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-2">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-2">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input"
-                required
-                minLength={8}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Must be at least 8 characters with uppercase, lowercase, and number
-              </p>
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="input"
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full"
-            >
-              {loading ? 'Creating account...' : 'Sign Up'}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Already have an account?{' '}
-              <Link to="/login" className="text-primary-600 hover:underline">
-                Login
-              </Link>
-            </p>
-          </div>
+    <AuthLayout title="Create your account" subtitle="It takes less than a minute. Your guest cart comes with you.">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div>
+          <label htmlFor="name" className="mb-1.5 block text-sm font-medium">Full name</label>
+          <input id="name" type="text" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="input" required />
         </div>
-      </div>
-    </div>
+
+        <div>
+          <label htmlFor="email" className="mb-1.5 block text-sm font-medium">Email</label>
+          <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" required />
+        </div>
+
+        <div>
+          <label htmlFor="password" className="mb-1.5 block text-sm font-medium">Password</label>
+          <input id="password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="input" required />
+          {password && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex flex-1 gap-1">
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className={`h-1.5 flex-1 rounded-full ${
+                      i < strength ? (strength <= 1 ? 'bg-red-400' : strength <= 2 ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-slate-200'
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-ink-muted">{['Too weak', 'Weak', 'Okay', 'Good', 'Strong'][strength]}</span>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-medium">Confirm password</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="input"
+            required
+          />
+        </div>
+
+        <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? 'Creating account…' : 'Create account'}
+        </button>
+      </form>
+
+      <p className="mt-8 text-center text-sm text-ink-muted">
+        Already have an account?{' '}
+        <Link to="/login" state={location.state} className="font-semibold text-primary-600 hover:text-primary-700">
+          Sign in
+        </Link>
+      </p>
+    </AuthLayout>
   );
 };
 

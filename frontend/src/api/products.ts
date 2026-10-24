@@ -8,6 +8,9 @@ interface ProductFilters {
   maxPrice?: number;
   tags?: string;
   featured?: boolean;
+  onSale?: boolean;
+  minRating?: number;
+  brand?: string;
   sort?: string;
   page?: number;
   limit?: number;

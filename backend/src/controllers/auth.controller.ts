@@ -13,6 +13,14 @@ import {
 } from '../utils/jwt';
 import { config } from '../config/env';
 
+// In production the frontend (Vercel/Netlify) and API (Render) are on different sites, so the
+// refresh cookie must be SameSite=None (which requires Secure) or the browser won't send it.
+const refreshCookieBase = {
+  httpOnly: true,
+  secure: config.env === 'production',
+  sameSite: (config.env === 'production' ? 'none' : 'lax') as 'none' | 'lax',
+};
+
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
 
@@ -41,9 +49,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
   // Set refresh token in HTTP-only cookie
   res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: config.env === 'production',
-    sameSite: 'strict',
+    ...refreshCookieBase,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
@@ -91,9 +97,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   // Set refresh token in HTTP-only cookie
   res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: config.env === 'production',
-    sameSite: 'strict',
+    ...refreshCookieBase,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
@@ -149,9 +153,7 @@ export const refreshTokenHandler = asyncHandler(
 
     // Set new refresh token in cookie
     res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: config.env === 'production',
-      sameSite: 'strict',
+      ...refreshCookieBase,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -172,7 +174,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
     await revokeRefreshToken(refreshToken);
   }
 
-  res.clearCookie('refreshToken');
+  res.clearCookie('refreshToken', refreshCookieBase);
 
   res.json({
     success: true,
@@ -187,7 +189,7 @@ export const logoutAll = asyncHandler(async (req: Request, res: Response) => {
 
   await revokeAllUserTokens(req.userId);
 
-  res.clearCookie('refreshToken');
+  res.clearCookie('refreshToken', refreshCookieBase);
 
   res.json({
     success: true,

@@ -1,12 +1,49 @@
 # Deployment Guide - OneShop E-Commerce App
 
-This guide covers deploying the OneShop frontend to Netlify.
+This guide covers deploying OneShop as a full stack app with Vercel or Netlify for the frontend, Render for the backend, and MongoDB Atlas for the database.
 
 ## Prerequisites
 
 - GitHub account with the repository pushed
 - Netlify account (free tier is sufficient)
 - Environment variables ready (API URL, Stripe keys)
+
+## Deployment Architecture
+
+- Frontend: Netlify
+- Backend API: Render
+- Database: MongoDB Atlas
+- Payments: Stripe test mode for first public release
+
+## Deploy with Vercel (frontend) + Render (backend)
+
+The frontend is a static Vite app (Vercel or Netlify). The Express API, MongoDB access and the
+Gemini shopping assistant run on the backend (Render). **Secrets such as `GEMINI_API_KEY` go on
+the backend only.** Anything set on Vercel with a `VITE_` prefix is bundled into public JavaScript.
+
+### 1. Backend on Render
+Create the service from `render.yaml`, then set:
+
+| Variable | Value |
+|----------|-------|
+| `MONGODB_URI` | MongoDB Atlas connection string |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Long random strings (not the example values) |
+| `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` | From the Stripe dashboard |
+| `FRONTEND_URL` | Your Vercel URL, e.g. `https://oneshop.vercel.app` (comma-separate extra URLs such as previews) |
+| `GEMINI_API_KEY` | Google AI Studio key for the shopping assistant |
+| `ASSISTANT_MODEL` | Optional, defaults to `gemini-3.5-flash-lite` |
+| `RATE_LIMIT_MAX_REQUESTS` | Requests per IP per 15 min, e.g. `300` |
+
+Seed the catalog once against Atlas: `MONGODB_URI=<atlas uri> npm --prefix backend run seed:demo`.
+
+### 2. Frontend on Vercel
+1. Import the GitHub repo in Vercel and set **Root Directory** to `frontend` (`frontend/vercel.json` handles the build and SPA routing).
+2. Add environment variables:
+   - `VITE_API_URL` = `https://<your-render-service>.onrender.com/api/v1`
+   - `VITE_STRIPE_PUBLISHABLE_KEY` = `pk_test_...` (or live key)
+3. Deploy, then put the final Vercel URL into the backend's `FRONTEND_URL`.
+
+Note: the Render free plan sleeps when idle, so the first request after a pause can take ~30-60s.
 
 ## Quick Deploy to Netlify
 
@@ -36,7 +73,7 @@ This guide covers deploying the OneShop frontend to Netlify.
 
      | Variable Name | Value | Description |
      |---------------|-------|-------------|
-     | `VITE_API_URL` | `http://localhost:5000/api/v1` | Backend API URL (or your deployed backend URL) |
+     | `VITE_API_URL` | `https://your-render-service.onrender.com/api/v1` | Backend API URL |
      | `VITE_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` | Your Stripe publishable key |
 
    - **Note:** For frontend-only mode (no backend), you can use placeholder values:
@@ -87,8 +124,38 @@ Located in the project root, this file contains:
 - Security headers
 - Asset caching rules
 
+### `render.yaml`
+Located in the project root, this file preconfigures the backend Render service:
+- Root directory: `backend`
+- Build command: `npm install && npm run build`
+- Start command: `npm run start`
+- `/health` health check
+- Required backend environment variables
+
 ### `frontend/public/_redirects`
 Ensures all routes are handled by React Router (client-side routing).
+
+## Backend Deployment on Render
+
+1. Create a new Render Web Service from your GitHub repo.
+2. Render can detect [render.yaml](/c:/Users/Lenovo/Desktop/PROJECTS/e-commerce%20app/render.yaml), or you can set the same values manually.
+3. Set these required environment variables in Render:
+   - `MONGODB_URI`
+   - `JWT_ACCESS_SECRET`
+   - `JWT_REFRESH_SECRET`
+   - `STRIPE_SECRET_KEY`
+   - `STRIPE_PUBLISHABLE_KEY`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `FRONTEND_URL`
+4. After the first deploy, verify `https://<your-render-service>/health`.
+
+## Database Deployment on MongoDB Atlas
+
+1. Create a free Atlas cluster.
+2. Create a database user and copy the connection string.
+3. Add Render's outbound access in Atlas network access settings, or allow the appropriate IP range for your first release.
+4. Paste the Atlas URI into Render as `MONGODB_URI`.
+5. After the backend is live, run the existing seed command against Atlas to load demo products and categories.
 
 ## Environment Variables Explained
 
@@ -96,14 +163,13 @@ Ensures all routes are handled by React Router (client-side routing).
 
 1. **VITE_API_URL**
    - Purpose: Backend API endpoint
-   - Frontend-only mode: Use a mock URL (API calls will fail gracefully)
-   - Full-stack mode: Use your deployed backend URL (e.g., Railway, Render, Heroku)
+   - Use your deployed Render backend URL (e.g. `https://your-service.onrender.com/api/v1`)
 
 2. **VITE_STRIPE_PUBLISHABLE_KEY**
    - Purpose: Stripe payment processing
    - Get from: [Stripe Dashboard](https://dashboard.stripe.com/apikeys)
    - Use test key for development: `pk_test_...`
-   - Use live key for production: `pk_live_...`
+   - Use test key for the first public deployment
 
 ## Custom Domain (Optional)
 
@@ -177,11 +243,11 @@ Additional optimizations in `netlify.toml`:
 
 ## Next Steps
 
-1. **Custom Domain:** Configure your own domain name
-2. **Deploy Backend:** Deploy the backend to Railway/Render/Heroku
-3. **Update Environment Variables:** Point `VITE_API_URL` to your backend
-4. **Configure Stripe:** Set up live Stripe keys for production payments
-5. **Add Analytics:** Integrate Google Analytics or Plausible
+1. **Deploy Backend:** Complete the Render API deploy
+2. **Deploy Database:** Point the backend to MongoDB Atlas
+3. **Update Frontend Environment Variables:** Point `VITE_API_URL` to Render
+4. **Configure Stripe Webhook:** Point Stripe to `https://<render-backend>/api/v1/webhooks/stripe`
+5. **Promote to Live Payments Later:** Switch from Stripe test keys to live keys only after checkout is verified
 
 ## Support
 

@@ -1,20 +1,28 @@
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { asyncHandler } from '../utils/asyncHandler';
-import { stripe } from '../utils/stripe';
+import { getStripeClient } from '../utils/stripe';
 import { Order } from '../models/Order.model';
 import { logger } from '../config/logger';
 import { config } from '../config/env';
+import { isStripeWebhookConfigured } from '../utils/stripe';
+import { reconcileOrderWithPaymentIntent } from '../utils/paymentReconciliation';
+import { restoreOrderStock } from '../utils/orderStock';
 
 export const stripeWebhook = asyncHandler(
   async (req: Request, res: Response) => {
     const sig = req.headers['stripe-signature'] as string;
+
+    if (!isStripeWebhookConfigured()) {
+      return res.status(400).send('Stripe webhook secret is not configured');
+    }
 
     if (!sig) {
       return res.status(400).send('Missing stripe-signature header');
     }
 
     let event: Stripe.Event;
+    const stripe = getStripeClient();
 
     try {
       event = stripe.webhooks.constructEvent(
@@ -64,9 +72,12 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     return;
   }
 
-  order.paymentStatus = 'paid';
-  order.stripeChargeId = paymentIntent.latest_charge as string;
-  await order.save();
+  if (order.paymentStatus === 'paid') {
+    logger.info(`Order ${orderId} already marked as paid`);
+    return;
+  }
+
+  await reconcileOrderWithPaymentIntent(order, paymentIntent);
 
   logger.info(`Order ${orderId} marked as paid`);
 }
@@ -85,14 +96,9 @@ async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
     logger.error(`Order ${orderId} not found`);
     return;
   }
-
-  order.paymentStatus = 'failed';
-  order.fulfillmentStatus = 'cancelled';
-  await order.save();
+  await reconcileOrderWithPaymentIntent(order, paymentIntent);
 
   logger.info(`Order ${orderId} marked as failed`);
-
-  // TODO: Restore stock
 }
 
 async function handleChargeRefunded(charge: Stripe.Charge) {
@@ -103,10 +109,15 @@ async function handleChargeRefunded(charge: Stripe.Charge) {
     return;
   }
 
+  if (order.paymentStatus === 'refunded') {
+    logger.info(`Order ${order._id} already marked as refunded`);
+    return;
+  }
+
+  await restoreOrderStock(order._id.toString());
+
   order.paymentStatus = 'refunded';
   await order.save();
 
   logger.info(`Order ${order._id} marked as refunded`);
-
-  // TODO: Restore stock
 }

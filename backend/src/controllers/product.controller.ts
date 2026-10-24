@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { Product } from '../models/Product.model';
+import { Category } from '../models/Category.model';
 
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -11,6 +13,9 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     maxPrice,
     tags,
     featured,
+    minRating,
+    onSale,
+    brand,
     sort = '-createdAt',
     page = '1',
     limit = '20',
@@ -24,7 +29,39 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   }
 
   if (category) {
-    filter.category = category;
+    const categoryQuery = category as string;
+    let matchedCategoryId: mongoose.Types.ObjectId | string | undefined;
+
+    const matchedCategory = await Category.findOne({
+      slug: categoryQuery,
+      isActive: true,
+    })
+      .select('_id')
+      .lean();
+
+    if (matchedCategory) {
+      matchedCategoryId = matchedCategory._id;
+    } else if (mongoose.isValidObjectId(categoryQuery)) {
+      matchedCategoryId = categoryQuery;
+    }
+
+    if (!matchedCategoryId) {
+      res.json({
+        success: true,
+        data: {
+          products: [],
+          pagination: {
+            page: parseInt(page as string, 10),
+            limit: parseInt(limit as string, 10),
+            total: 0,
+            pages: 0,
+          },
+        },
+      });
+      return;
+    }
+
+    filter.category = matchedCategoryId;
   }
 
   if (minPrice || maxPrice) {
@@ -41,6 +78,25 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
     filter.featured = true;
   }
 
+  if (minRating) {
+    filter.rating = { $gte: Number(minRating) };
+  }
+
+  if (onSale === 'true') {
+    // Discounted items: an MRP higher than the selling price
+    filter.$expr = { $gt: ['$compareAtPrice', '$price'] };
+  }
+
+  if (brand) {
+    filter.brand = { $in: (brand as string).split(',') };
+  }
+
+  // Only allow known sort keys; text searches default to relevance
+  const allowedSorts = ['-createdAt', 'price', '-price', '-rating', '-reviewsCount', 'name'];
+  const sortKey = allowedSorts.includes(sort as string) ? (sort as string) : '-createdAt';
+  const sortSpec: any =
+    q && !req.query.sort ? { score: { $meta: 'textScore' }, rating: -1 } : sortKey;
+
   // Pagination
   const pageNum = parseInt(page as string, 10);
   const limitNum = parseInt(limit as string, 10);
@@ -48,8 +104,8 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
 
   // Execute query
   const [products, total] = await Promise.all([
-    Product.find(filter)
-      .sort(sort as string)
+    Product.find(filter, q ? { score: { $meta: 'textScore' } } : undefined)
+      .sort(sortSpec)
       .skip(skip)
       .limit(limitNum)
       .populate('category', 'name slug')

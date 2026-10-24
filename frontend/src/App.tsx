@@ -2,6 +2,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
+import { AssistantProvider } from './context/AssistantContext';
+import ChatWidget from './components/assistant/ChatWidget';
+import ScrollToTop from './components/common/ScrollToTop';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import HomePage from './pages/Home/HomePage';
@@ -17,6 +20,7 @@ import AdminDashboard from './pages/Admin/AdminDashboard';
 import AdminProducts from './pages/Admin/AdminProducts';
 import AdminOrders from './pages/Admin/AdminOrders';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import NotFoundPage from './pages/NotFoundPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +36,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
+          <AssistantProvider>
+          <ScrollToTop />
           <div className="min-h-screen flex flex-col">
             <Header />
             <main className="flex-grow">
@@ -42,6 +48,7 @@ function App() {
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="*" element={<NotFoundPage />} />
 
                 {/* Protected Routes */}
                 <Route path="/checkout" element={
@@ -80,7 +87,15 @@ function App() {
             </main>
             <Footer />
           </div>
-          <Toaster position="top-right" />
+          <ChatWidget />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              className: '!rounded-xl !text-sm !font-medium !shadow-lift',
+              success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } },
+            }}
+          />
+          </AssistantProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

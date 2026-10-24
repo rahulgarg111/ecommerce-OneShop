@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query';
+import { categoriesApi } from '../api/categories';
 import { mockCategories } from '../data/mockCategories';
 import type { Category } from '../types';
 
@@ -7,6 +9,13 @@ interface CategoryNavbarProps {
 }
 
 const CategoryNavbar = ({ selectedCategory, onCategorySelect }: CategoryNavbarProps) => {
+  const { data, isError } = useQuery({
+    queryKey: ['categories'],
+    queryFn: categoriesApi.getCategories,
+  });
+
+  const categories = data?.data?.categories || (isError ? mockCategories : []);
+
   return (
     <aside className="w-56 bg-gray-50 border-r border-gray-200 p-4 hidden md:block">
       <h2 className="text-lg font-semibold mb-4 text-gray-800">Categories</h2>
@@ -28,7 +37,7 @@ const CategoryNavbar = ({ selectedCategory, onCategorySelect }: CategoryNavbarPr
           </li>
 
           {/* Category List */}
-          {mockCategories.map((category: Category) => (
+          {categories.map((category: Category) => (
             <li key={category._id}>
               <button
                 onClick={() => onCategorySelect(category.slug)}

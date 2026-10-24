@@ -28,6 +28,12 @@ export const config = {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
   },
 
+  // Shopping assistant (Google Gemini). Without a key the chat uses a basic keyword assistant.
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY || '',
+    model: process.env.ASSISTANT_MODEL || 'gemini-3.5-flash-lite',
+  },
+
   // Cloudinary
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

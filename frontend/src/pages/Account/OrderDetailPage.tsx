@@ -1,13 +1,18 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ordersApi } from '../../api/orders';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, MapPin, Truck, Sparkles, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { ordersApi } from '../../api/orders';
+import { useAssistant } from '../../context/AssistantContext';
+import SmartImage from '../../components/product/SmartImage';
+import { getOrderStage, StatusPill, OrderTimeline } from '../../components/order/OrderStatus';
+import { formatPrice } from '../../utils/format';
+import type { Product } from '../../types';
 
 const OrderDetailPage = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { open: openAssistant } = useAssistant();
 
   const { data, isLoading } = useQuery({
     queryKey: ['order', id],
@@ -19,170 +24,151 @@ const OrderDetailPage = () => {
     mutationFn: () => ordersApi.cancelOrder(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['order', id] });
-      toast.success('Order cancelled successfully');
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Order cancelled');
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to cancel order');
-    },
+    onError: (error: any) => toast.error(error.response?.data?.message || 'Failed to cancel order'),
   });
 
   const order = data?.data?.order;
 
   if (isLoading) {
     return (
-      <div className="container-custom py-8">
-        <div className="animate-pulse space-y-4">
-          <div className="bg-gray-300 h-8 w-64 rounded"></div>
-          <div className="bg-gray-300 h-64 rounded"></div>
-        </div>
+      <div className="container-custom max-w-5xl space-y-4 py-10">
+        <div className="skeleton h-8 w-64" />
+        <div className="skeleton h-40" />
+        <div className="skeleton h-64" />
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="container-custom py-8">
-        <p>Order not found</p>
+      <div className="container-custom py-24 text-center">
+        <h1 className="text-2xl font-bold">Order not found</h1>
+        <Link to="/orders" className="btn-primary mt-6">Back to orders</Link>
       </div>
     );
   }
 
+  const stage = getOrderStage(order);
   const canCancel = order.paymentStatus !== 'paid' && order.fulfillmentStatus === 'processing';
+  const number = order._id.slice(-8).toUpperCase();
 
   return (
-    <div className="container-custom py-8">
-      <button onClick={() => navigate('/orders')} className="flex items-center gap-2 text-primary-600 hover:underline mb-6">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Orders
-      </button>
+    <div className="container-custom max-w-5xl py-10">
+      <Link to="/orders" className="inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink">
+        <ArrowLeft className="h-4 w-4" /> All orders
+      </Link>
 
-      <div className="card mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+      {/* Header + tracker */}
+      <div className="card mt-4">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Order Details</h1>
-            <p className="text-gray-600">Order ID: {order._id}</p>
-            <p className="text-sm text-gray-600">
-              Placed on {new Date(order.createdAt).toLocaleDateString('en-IN', {
-                year: 'numeric',
-                month: 'long',
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold">Order #{number}</h1>
+              <StatusPill stage={stage} size="md" />
+            </div>
+            <p className="mt-1 text-sm text-ink-muted">
+              Placed on{' '}
+              {new Date(order.createdAt).toLocaleDateString('en-IN', {
                 day: 'numeric',
+                month: 'long',
+                year: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
               })}
             </p>
           </div>
-
-          {canCancel && (
-            <button
-              onClick={() => cancelMutation.mutate()}
-              disabled={cancelMutation.isPending}
-              className="btn-danger"
-            >
-              {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Order'}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => openAssistant(`What's the status of my order #${number}?`)} className="btn-outline py-2">
+              <Sparkles className="h-4 w-4 text-primary-600" /> Ask assistant
             </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-6">
-          <div>
-            <h3 className="font-semibold mb-2">Payment Status</h3>
-            <span className={`px-3 py-1 rounded text-sm font-semibold ${
-              order.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
-              order.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-red-100 text-red-800'
-            }`}>
-              {order.paymentStatus.toUpperCase()}
-            </span>
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-2">Fulfillment Status</h3>
-            <span className={`px-3 py-1 rounded text-sm font-semibold ${
-              order.fulfillmentStatus === 'delivered' ? 'bg-green-100 text-green-800' :
-              order.fulfillmentStatus === 'shipped' ? 'bg-blue-100 text-blue-800' :
-              order.fulfillmentStatus === 'processing' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-red-100 text-red-800'
-            }`}>
-              {order.fulfillmentStatus.toUpperCase()}
-            </span>
+            {canCancel && (
+              <button onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} className="btn-danger py-2">
+                <XCircle className="h-4 w-4" />
+                {cancelMutation.isPending ? 'Cancelling…' : 'Cancel order'}
+              </button>
+            )}
           </div>
         </div>
+
+        {(stage === 'processing' || stage === 'in_transit' || stage === 'delivered') && (
+          <div className="mt-8 border-t border-slate-100 pt-6">
+            <OrderTimeline stage={stage} />
+            {order.trackingNumber && (
+              <p className="mt-5 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                <Truck className="h-4 w-4 text-primary-600" />
+                Tracking number <span className="font-mono font-semibold">{order.trackingNumber}</span>
+                {order.notes && <span className="text-ink-muted">· {order.notes}</span>}
+              </p>
+            )}
+          </div>
+        )}
+        {stage === 'awaiting_payment' && (
+          <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            We haven't received payment for this order yet. It will start processing once payment is confirmed.
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Order Items */}
-        <div className="lg:col-span-2">
-          <div className="card">
-            <h2 className="text-xl font-bold mb-4">Order Items</h2>
-            <div className="space-y-4">
-              {order.items.map((item: any, index: number) => (
-                <div key={index} className="flex justify-between border-b pb-4 last:border-b-0">
-                  <div>
-                    <h3 className="font-semibold">{item.name}</h3>
-                    {item.sku && <p className="text-sm text-gray-600">SKU: {item.sku}</p>}
-                    <p className="text-sm text-gray-600">Quantity: {item.quantity}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold">₹{(item.price / 100).toFixed(2)}</p>
-                    <p className="text-sm text-gray-600">
-                      Total: ₹{((item.price * item.quantity) / 100).toFixed(2)}
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        {/* Items */}
+        <div className="card lg:col-span-2">
+          <h2 className="text-lg font-bold">Items</h2>
+          <ul className="mt-4 divide-y divide-slate-100">
+            {order.items.map((item, index) => {
+              const product = typeof item.product === 'object' ? (item.product as Product) : undefined;
+              return (
+                <li key={index} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+                  <SmartImage width={64} src={product?.images?.[0]?.url} alt={item.name} className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    {product?.slug ? (
+                      <Link to={`/products/${product.slug}`} className="font-semibold hover:text-primary-700">{item.name}</Link>
+                    ) : (
+                      <p className="font-semibold">{item.name}</p>
+                    )}
+                    <p className="text-sm text-ink-muted">
+                      Qty {item.quantity} × {formatPrice(item.price)}
+                      {item.sku && ` · SKU ${item.sku}`}
                     </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                  <p className="font-semibold">{formatPrice(item.price * item.quantity)}</p>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
-        {/* Summary & Address */}
         <div className="space-y-6">
-          {/* Order Summary */}
           <div className="card">
-            <h2 className="text-xl font-bold mb-4">Summary</h2>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal</span>
-                <span>₹{(order.subtotal / 100).toFixed(2)}</span>
+            <h2 className="text-lg font-bold">Payment summary</h2>
+            <dl className="mt-4 space-y-2.5 text-sm">
+              <div className="flex justify-between"><dt className="text-ink-muted">Subtotal</dt><dd>{formatPrice(order.subtotal, true)}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink-muted">Delivery</dt><dd>{order.shippingCost ? formatPrice(order.shippingCost, true) : 'Free'}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink-muted">GST</dt><dd>{formatPrice(order.tax, true)}</dd></div>
+              <div className="flex justify-between border-t border-slate-100 pt-3 text-base font-bold">
+                <dt>Total</dt>
+                <dd>{formatPrice(order.total, true)}</dd>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Shipping</span>
-                <span>₹{(order.shippingCost / 100).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Tax</span>
-                <span>₹{(order.tax / 100).toFixed(2)}</span>
-              </div>
-              <div className="border-t pt-2 flex justify-between font-bold text-base">
-                <span>Total</span>
-                <span className="text-primary-600">₹{(order.total / 100).toFixed(2)}</span>
-              </div>
-            </div>
+            </dl>
+            <p className="mt-3 text-xs capitalize text-ink-muted">Payment: {order.paymentStatus}</p>
           </div>
 
-          {/* Shipping Address */}
           <div className="card">
-            <h2 className="text-xl font-bold mb-4">Shipping Address</h2>
-            <address className="text-sm text-gray-600 not-italic">
-              <p className="font-semibold text-gray-900">{order.shippingAddress.name}</p>
+            <h2 className="flex items-center gap-2 text-lg font-bold">
+              <MapPin className="h-4 w-4 text-primary-600" /> Delivery address
+            </h2>
+            <address className="mt-3 text-sm not-italic leading-relaxed text-ink-soft">
+              <p className="font-semibold text-ink">{order.shippingAddress.name}</p>
               <p>{order.shippingAddress.street}</p>
               <p>
                 {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.postalCode}
               </p>
               <p>{order.shippingAddress.country}</p>
-              <p className="mt-2">Phone: {order.shippingAddress.phone}</p>
+              <p className="mt-2 text-ink-muted">{order.shippingAddress.phone}</p>
             </address>
           </div>
-
-          {order.trackingNumber && (
-            <div className="card">
-              <h2 className="text-xl font-bold mb-4">Tracking</h2>
-              <p className="text-sm">
-                <span className="text-gray-600">Tracking Number:</span>
-                <br />
-                <span className="font-mono font-semibold">{order.trackingNumber}</span>
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
+import { config } from '../config/env';
 import { Order } from '../models/Order.model';
 import { Cart } from '../models/Cart.model';
 import { Product } from '../models/Product.model';
-import { stripe, calculateTax, calculateShipping } from '../utils/stripe';
+import {
+  getStripeClient,
+  validateStripeCheckoutConfiguration,
+  isStripeWebhookConfigured,
+  calculateTax,
+  calculateShipping,
+} from '../utils/stripe';
+import { restoreOrderStock } from '../utils/orderStock';
+import { reconcileOrderWithPaymentIntent } from '../utils/paymentReconciliation';
 
 export const checkout = asyncHandler(async (req: Request, res: Response) => {
   if (!req.userId) {
@@ -13,6 +21,13 @@ export const checkout = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const { shippingAddress, billingAddress, paymentMethod = 'stripe' } = req.body;
+
+  if (paymentMethod !== 'stripe') {
+    throw ApiError.badRequest('Unsupported payment method');
+  }
+
+  validateStripeCheckoutConfiguration();
+  const stripe = getStripeClient();
 
   // Get user's cart
   const cart = await Cart.findOne({ user: req.userId }).populate('items.product');
@@ -24,16 +39,26 @@ export const checkout = asyncHandler(async (req: Request, res: Response) => {
   // Verify stock and calculate totals
   let subtotal = 0;
   const orderItems: any[] = [];
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const stockReservations: Array<{
+    productId: string;
+    variantSku?: string;
+    quantity: number;
+  }> = [];
+  let createdOrderId: string | null = null;
+  let paymentIntentId: string | null = null;
 
   try {
     for (const cartItem of cart.items) {
-      const product = await Product.findById(cartItem.product._id).session(session);
+      const cartProduct =
+        cartItem.product && typeof cartItem.product === 'object' && '_id' in cartItem.product
+          ? (cartItem.product as any)
+          : null;
+      const productId = cartProduct?._id?.toString() || cartItem.product.toString();
+      const product = await Product.findById(productId);
 
       if (!product || !product.isActive) {
-        throw ApiError.badRequest(`Product ${cartItem.product.name} is no longer available`);
+        const productName = cartProduct?.name || 'This product';
+        throw ApiError.badRequest(`Product ${productName} is no longer available`);
       }
 
       // Check stock
@@ -63,7 +88,12 @@ export const checkout = asyncHandler(async (req: Request, res: Response) => {
         product.stock -= cartItem.quantity;
       }
 
-      await product.save({ session });
+      await product.save();
+      stockReservations.push({
+        productId: product._id.toString(),
+        variantSku: cartItem.variantSku,
+        quantity: cartItem.quantity,
+      });
 
       subtotal += price * cartItem.quantity;
 
@@ -83,61 +113,136 @@ export const checkout = asyncHandler(async (req: Request, res: Response) => {
 
     // Create order
     const order = await Order.create(
-      [
-        {
-          user: req.userId,
-          items: orderItems,
-          shippingAddress,
-          billingAddress: billingAddress || shippingAddress,
-          subtotal,
-          shippingCost,
-          tax,
-          total,
-          currency: 'INR',
-          paymentStatus: 'pending',
-          fulfillmentStatus: 'processing',
-        },
-      ],
-      { session }
+      {
+        user: req.userId,
+        items: orderItems,
+        shippingAddress,
+        billingAddress: billingAddress || shippingAddress,
+        subtotal,
+        shippingCost,
+        tax,
+        total,
+        currency: 'INR',
+        paymentStatus: 'pending',
+        fulfillmentStatus: 'processing',
+      }
     );
+    createdOrderId = order._id.toString();
 
     // Create Stripe PaymentIntent
     const paymentIntent = await stripe.paymentIntents.create({
       amount: total,
       currency: 'inr',
       metadata: {
-        orderId: order[0]._id.toString(),
+        orderId: order._id.toString(),
         userId: req.userId,
       },
       automatic_payment_methods: {
         enabled: true,
       },
     });
+    paymentIntentId = paymentIntent.id;
 
-    order[0].stripePaymentIntentId = paymentIntent.id;
-    await order[0].save({ session });
+    if (!paymentIntent.client_secret) {
+      throw ApiError.internal('Stripe did not return a payment client secret');
+    }
+
+    order.stripePaymentIntentId = paymentIntent.id;
+    await order.save();
 
     // Clear cart
     cart.items = [];
-    await cart.save({ session });
-
-    await session.commitTransaction();
+    await cart.save();
 
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
       data: {
-        order: order[0],
+        order,
         clientSecret: paymentIntent.client_secret,
-        publishableKey: stripe.publicKey,
+        publishableKey: config.stripe.publishableKey,
+        webhookConfigured: isStripeWebhookConfigured(),
       },
     });
   } catch (error) {
-    await session.abortTransaction();
+    if (paymentIntentId) {
+      try {
+        await stripe.paymentIntents.cancel(paymentIntentId);
+      } catch {
+        // Ignore cleanup errors so the original checkout error surfaces.
+      }
+    }
+
+    if (createdOrderId) {
+      await Order.findByIdAndDelete(createdOrderId);
+    }
+
+    for (const reservation of stockReservations.reverse()) {
+      const product = await Product.findById(reservation.productId);
+
+      if (!product) {
+        continue;
+      }
+
+      if (reservation.variantSku) {
+        const variant = product.variants.find((candidate) => candidate.sku === reservation.variantSku);
+        if (variant) {
+          variant.stock += reservation.quantity;
+        }
+      } else {
+        product.stock += reservation.quantity;
+      }
+
+      await product.save();
+    }
+
     throw error;
-  } finally {
-    session.endSession();
   }
+});
+
+export const confirmPayment = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (!req.userId) {
+    throw ApiError.unauthorized('Authentication required');
+  }
+
+  const order = await Order.findById(id);
+
+  if (!order) {
+    throw ApiError.notFound('Order not found');
+  }
+
+  if (req.userId !== order.user.toString() && req.user?.role !== 'admin') {
+    throw ApiError.forbidden('Access denied');
+  }
+
+  if (!order.stripePaymentIntentId) {
+    throw ApiError.badRequest('This order does not have a Stripe payment intent to confirm.');
+  }
+
+  if (order.paymentStatus === 'paid') {
+    res.json({
+      success: true,
+      data: {
+        order,
+        paymentOutcome: 'paid',
+      },
+    });
+    return;
+  }
+
+  const stripe = getStripeClient();
+  const paymentIntent = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId);
+  const paymentOutcome = await reconcileOrderWithPaymentIntent(order, paymentIntent);
+
+  res.json({
+    success: true,
+    data: {
+      order,
+      paymentOutcome,
+    },
+  });
 });
 
 export const getOrders = asyncHandler(async (req: Request, res: Response) => {
@@ -224,37 +329,11 @@ export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.badRequest('Order cannot be cancelled at this stage');
   }
 
+  await restoreOrderStock(order._id.toString());
+
   order.fulfillmentStatus = 'cancelled';
   order.paymentStatus = 'failed';
   await order.save();
-
-  // Restore stock
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    for (const item of order.items) {
-      const product = await Product.findById(item.product).session(session);
-      if (product) {
-        if (item.sku) {
-          const variant = product.variants.find((v) => v.sku === item.sku);
-          if (variant) {
-            variant.stock += item.quantity;
-          }
-        } else {
-          product.stock += item.quantity;
-        }
-        await product.save({ session });
-      }
-    }
-
-    await session.commitTransaction();
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
-  }
 
   res.json({
     success: true,

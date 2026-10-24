@@ -1,21 +1,26 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm install
-
-# Copy source code
 COPY . .
+RUN npm run build
 
-# Create logs directory
+FROM node:20-alpine AS production
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/scripts ./scripts
 RUN mkdir -p logs
 
-# Expose port
 EXPOSE 5000
 
-# Start the application
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start"]

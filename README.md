@@ -219,8 +219,31 @@ npm run dev
 - `PUT /api/v1/admin/orders/:id/fulfill` - Update order fulfillment
 - `GET /api/v1/admin/analytics` - Get analytics data
 
+### Shopping Assistant Endpoints
+- `GET /api/v1/assistant/status` - Whether the assistant runs on Claude (`ai`) or the keyword fallback (`basic`)
+- `POST /api/v1/assistant/chat` - Send `{ messages: [{ role, content }], sessionId }`; returns a reply plus product, order and cart cards
+
 ### Webhook Endpoints
 - `POST /api/v1/webhooks/stripe` - Stripe webhook handler
+
+## AI Shopping Assistant
+
+The chat bubble on every page opens an assistant that:
+
+- **Recommends products for a goal** — "I want to cook healthier", "what goes in my gym bag", "I do a lot of cardio" — by searching the catalog with tools and showing product cards shoppers can add to cart.
+- **Answers order questions** — delivered, in transit (with tracking number), processing, awaiting payment, cancelled — for signed-in shoppers.
+- **Reads (and, when asked, adds to) the cart** for guests and signed-in shoppers.
+
+With `GEMINI_API_KEY` set it runs on Google Gemini with function calling (`backend/src/services/assistant/geminiAssistant.ts`; the prompt and tools live in `assistantCore.ts`). Without a key, or if the API call fails, it uses a keyword matcher (`basicAssistant.ts`) so the chat keeps working in local demos.
+
+## Demo Data
+
+```bash
+cd backend
+npm run seed:demo
+```
+
+Seeds 10 categories and ~100 products (with brands, MRP discounts, highlights and goal tags such as `healthy-cooking`, `cardio`, `gym-bag`), plus a demo shopper with delivered, in-transit, processing and cancelled orders and a filled cart. The demo login is in `backend/scripts/seed-demo.js`. The script is safe to re-run.
 
 ## Environment Variables
 
@@ -238,6 +261,8 @@ npm run dev
 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |
 | `CLOUDINARY_API_SECRET` | Cloudinary API secret | Yes |
 | `FRONTEND_URL` | Frontend URL for CORS | No |
+| `GEMINI_API_KEY` | Google Gemini API key for the AI shopping assistant. Without it the chat falls back to a built-in keyword assistant | No |
+| `ASSISTANT_MODEL` | Gemini model for the assistant (default `gemini-3.5-flash-lite`) | No |
 
 ### Frontend
 | Variable | Description | Required |
@@ -273,9 +298,11 @@ stripe trigger payment_intent.succeeded
 
 ### Frontend (Vercel)
 1. Push code to GitHub
-2. Import project to Vercel
-3. Set environment variables
-4. Deploy
+2. Import project to Vercel with **Root Directory** `frontend`
+3. Set `VITE_API_URL` and `VITE_STRIPE_PUBLISHABLE_KEY`
+4. Deploy, then set the backend's `FRONTEND_URL` to the Vercel URL
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full variable list. `GEMINI_API_KEY` belongs on the backend, never on Vercel.
 
 ### Database (MongoDB Atlas)
 1. Create free M0 cluster

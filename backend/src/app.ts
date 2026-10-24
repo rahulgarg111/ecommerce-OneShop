@@ -17,14 +17,23 @@ import categoryRoutes from './routes/category.routes';
 import webhookRoutes from './routes/webhook.routes';
 import adminRoutes from './routes/admin.routes';
 import uploadRoutes from './routes/upload.routes';
+import assistantRoutes from './routes/assistant.routes';
 
 const app: Application = express();
+
+// Behind Render's (or any) proxy: use the real client IP for rate limiting and secure cookies
+if (config.env === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// FRONTEND_URL may list several origins, comma-separated (e.g. production + preview URLs)
+const allowedOrigins = config.frontendUrl.split(',').map((origin) => origin.trim().replace(/\/$/, ''));
 
 // Security middleware
 app.use(helmet());
 app.use(
   cors({
-    origin: config.frontendUrl,
+    origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)),
     credentials: true,
   })
 );
@@ -77,6 +86,7 @@ app.use(`${apiPrefix}/categories`, categoryRoutes);
 app.use(`${apiPrefix}/webhooks`, webhookRoutes);
 app.use(`${apiPrefix}/admin`, adminRoutes);
 app.use(`${apiPrefix}/uploads`, uploadRoutes);
+app.use(`${apiPrefix}/assistant`, assistantRoutes);
 
 // Error handling
 app.use(notFoundHandler);

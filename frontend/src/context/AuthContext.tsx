@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { User } from '../types';
 import { authApi } from '../api/auth';
+import { cartApi } from '../api/cart';
 import toast from 'react-hot-toast';
 
 interface AuthContextType {
@@ -19,6 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     checkAuth();
@@ -38,12 +41,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const mergeGuestCartIfPresent = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      await cartApi.mergeCarts(sessionId);
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+    } catch (error) {
+      console.error('Cart merge error:', error);
+      toast.error('Logged in, but we could not merge your guest cart automatically.');
+    }
+  };
+
   const login = async (email: string, password: string) => {
     try {
       const response = await authApi.login({ email, password });
       if (response.data) {
         localStorage.setItem('accessToken', response.data.accessToken);
         setUser(response.data.user);
+        await mergeGuestCartIfPresent();
         toast.success('Login successful!');
       }
     } catch (error: any) {
@@ -58,6 +78,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (response.data) {
         localStorage.setItem('accessToken', response.data.accessToken);
         setUser(response.data.user);
+        await mergeGuestCartIfPresent();
         toast.success('Registration successful!');
       }
     } catch (error: any) {
