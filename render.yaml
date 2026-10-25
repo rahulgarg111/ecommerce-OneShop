@@ -4,46 +4,42 @@ services:
     env: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run build
+    # --include=dev: NODE_ENV=production would otherwise skip TypeScript, which the build needs
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     autoDeploy: true
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
+
+      # Render asks for these when you create the Blueprint
       - key: MONGODB_URI
         sync: false
-      - key: JWT_ACCESS_SECRET
-        sync: false
-      - key: JWT_REFRESH_SECRET
+      - key: GEMINI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
       - key: FRONTEND_URL
         sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_PORT
-        sync: false
-      - key: EMAIL_USER
-        sync: false
-      - key: EMAIL_PASSWORD
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
+
+      # Render generates these random secrets for you
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # Fixed settings
+      - key: ASSISTANT_MODEL
+        value: gemini-3.5-flash-lite
       - key: RATE_LIMIT_WINDOW_MS
-        value: 900000
+        value: "900000"
       - key: RATE_LIMIT_MAX_REQUESTS
-        value: 100
+        value: "300"
+
+      # Optional — add later in the dashboard (Environment tab) if you need them:
+      # STRIPE_WEBHOOK_SECRET          Stripe webhook signing secret
+      # CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET   admin image uploads
+      # EMAIL_HOST / EMAIL_PORT / EMAIL_USER / EMAIL_PASSWORD / EMAIL_FROM   password-reset emails
